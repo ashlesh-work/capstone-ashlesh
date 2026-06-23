@@ -1,0 +1,16 @@
+# Secrets — NEVER commit. Keys live here locally, in the container they are injected as env vars.
+.env
+.env.*
+!.env.example
+
+# Dependencies / build output
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/

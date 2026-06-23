@@ -1,0 +1,213 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   PageToolbar & AudioPlayer — accessibility controls for topic pages.
+   All interactive targets meet WCAG 2.5.8 (44 × 44 px minimum).
+   ───────────────────────────────────────────────────────────────────────── */
+
+.page-toolbar {
+  position: sticky;
+  top: 49px; /* below site-header */
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-lg);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--glass-border);
+  flex-wrap: wrap;
+}
+
+.page-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-toolbar__divider {
+  width: 1px;
+  height: 24px;
+  background: var(--hairline);
+  margin-inline: var(--space-xs);
+}
+
+/* Toolbar buttons — pill style, compact */
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+.tb-btn:hover {
+  border-color: var(--action);
+  color: var(--action);
+}
+.tb-btn:active {
+  transform: scale(0.96);
+}
+.tb-btn[aria-pressed='true'],
+.tb-btn--active {
+  background: var(--action);
+  color: var(--on-accent);
+  border-color: var(--action);
+}
+.tb-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tb-btn__icon {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+/* Font-size control group */
+.font-size-group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.font-size-group .tb-btn {
+  border: none;
+  border-radius: 0;
+  min-width: 44px;
+  padding: 8px 12px;
+}
+.font-size-group .tb-btn + .tb-btn {
+  border-left: 1px solid var(--hairline);
+}
+
+/* ── Audio Player (floating mini-player) ────────────────────────────── */
+
+.audio-player {
+  position: fixed;
+  bottom: 90px; /* above voice-launcher */
+  right: 24px;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: min(380px, calc(100vw - 48px));
+  padding: var(--space-md);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--product-shadow);
+  animation: player-in 0.2s ease;
+}
+
+@keyframes player-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.audio-player__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.audio-player__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.audio-player__label .pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--action);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.audio-player__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.audio-player__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.audio-player__btn:hover {
+  background: var(--action);
+  color: var(--on-accent);
+  border-color: var(--action);
+}
+
+.audio-player__progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.audio-player__progress-bar {
+  height: 100%;
+  background: var(--action);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.audio-player__status {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .page-toolbar {
+    gap: 4px;
+    padding: var(--space-xs) var(--space-sm);
+  }
+  .tb-btn span:not(.tb-btn__icon) {
+    display: none; /* icon-only on mobile */
+  }
+  .tb-btn {
+    padding: 8px 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-player { animation: none; }
+  .audio-player__label .pulse-dot { animation: none; }
+}

@@ -1,0 +1,113 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Access508 design tokens — Apple structural discipline re-skinned with HCLTech.
+   Contrast verified for WCAG 2.2 AA (text >= 4.5:1, UI/non-text >= 3:1).
+   Light = default; dark applied via [data-theme="dark"] on <html>.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root,
+:root[data-theme='light'] {
+  /* Brand (HCLTech) */
+  --hcl-dark-blue: #0f5fdc;
+  --hcl-tech-purple: #5f1ebe;
+  --hcl-gradient-deep: #411482;
+  --hcl-gradient-intense: linear-gradient(120deg, #0f5fdc, #5f1ebe, #411482);
+
+  /* Action / interactive — single accent (Apple discipline) */
+  --action: var(--hcl-dark-blue);       /* 5.7:1 on white  */
+  --action-strong: #0a3f93;             /* hover/pressed deepen */
+  --focus-ring: var(--hcl-dark-blue);
+
+  /* Surfaces (Apple parchment/white rhythm) */
+  --canvas: #ffffff;
+  --canvas-alt: #f5f5f7;
+  --tile-dark: #272729;                 /* the alternating dark band */
+  --surface-card: #ffffff;
+  --hairline: #e0e0e0;
+
+  /* Ink / text */
+  --ink: #1d1d1f;
+  --ink-muted: #4a4a4f;                 /* 7.4:1 on white */
+  --on-accent: #ffffff;
+  --on-dark: #ffffff;
+  --on-dark-muted: #cccccc;
+  --link-on-dark: #5aa0ff;              /* 5.6:1 on --tile-dark */
+
+  /* Glass (governed: voice chrome only) */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --product-shadow: rgba(0, 0, 0, 0.22) 0 5px 30px;
+
+  /* Type (Roobert -> Inter; converges with Apple SF Pro substitute) */
+  --font-display: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /* Spacing (Apple 8px base) */
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 17px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-section: 80px;
+
+  --radius-sm: 8px;
+  --radius-lg: 18px;
+  --radius-pill: 9999px;
+
+  color-scheme: light;
+
+  /* Font-size scale (accessibility toolbar) */
+  --font-scale: 1;
+  --prose-size: calc(1.0625rem * var(--font-scale));
+  --body-size: calc(17px * var(--font-scale));
+}
+
+:root[data-theme='dark'] {
+  --canvas: #1d1d1f;
+  --canvas-alt: #161617;
+  --tile-dark: #000000;
+  --surface-card: #272729;
+  --hairline: #3a3a3c;
+
+  --ink: #f5f5f7;
+  --ink-muted: #c4c4c8;                 /* >= 7:1 on dark canvas */
+  --action: #5aa0ff;                    /* on-dark action passes AA on dark canvas */
+  --action-strong: #8bbcff;
+  --focus-ring: #5aa0ff;
+  --on-accent: #07142b;                 /* dark text on the light-blue action chip */
+  --link-on-dark: #5aa0ff;
+
+  --glass-bg: rgba(28, 28, 30, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --product-shadow: rgba(0, 0, 0, 0.5) 0 5px 30px;
+
+  color-scheme: dark;
+}
+
+/* High-contrast mode — AAA 7:1+ ratios, heavy borders, no transparency */
+:root[data-contrast='high'] {
+  --canvas: #000000;
+  --canvas-alt: #0a0a0a;
+  --tile-dark: #000000;
+  --surface-card: #111111;
+  --hairline: #ffffff;
+
+  --ink: #ffffff;
+  --ink-muted: #f0f0f0;
+  --action: #ffff00;
+  --action-strong: #ffff66;
+  --focus-ring: #ffff00;
+  --on-accent: #000000;
+  --on-dark: #ffffff;
+  --on-dark-muted: #f0f0f0;
+  --link-on-dark: #ffff00;
+
+  --glass-bg: rgba(0, 0, 0, 0.95);
+  --glass-border: #ffffff;
+  --product-shadow: none;
+
+  color-scheme: dark;
+}
+:root[data-contrast='high'] img {
+  filter: contrast(1.2);
+}

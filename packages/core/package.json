@@ -1,0 +1,17 @@
+{
+  "name": "@access508/core",
+  "version": "0.1.0",
+  "description": "Stack-agnostic correctness core: KB parsing, lexical retrieval, grounding decision, citation assembly, prompt building. Pure ESM + JSDoc types so it runs under plain Node (no build step) and is unit-testable without a network.",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

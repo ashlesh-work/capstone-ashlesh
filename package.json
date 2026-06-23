@@ -1,0 +1,25 @@
+{
+  "name": "access508",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accessible (WCAG 2.2 AA) ADA / Section 508 educational web app with an embedded transcript-first voice assistant.",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "test:core": "node --test packages/core/test/*.test.js",
+    "dev": "npm run dev --workspace server & npm run dev --workspace web",
+    "dev:server": "npm run dev --workspace server",
+    "dev:web": "npm run dev --workspace web",
+    "build": "npm run build --workspace web && npm run build --workspace server",
+    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
+    "test": "npm run test:core && npm run test --workspace web --if-present && npm run test --workspace server --if-present",
+    "test:a11y": "npm run test:a11y --workspace web --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

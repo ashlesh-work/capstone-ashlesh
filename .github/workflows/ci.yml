@@ -1,0 +1,35 @@
+name: CI — tests + accessibility gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test-a11y:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install
+
+      # 1. Correctness core (grounding, citations, refusal) — runs offline.
+      - name: Core unit tests
+        run: npm run test:core
+
+      # 2. Typecheck the TypeScript packages.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 3. Component accessibility (jest-axe) + unit tests.
+      - name: Web tests
+        run: npm run test --workspace web
+
+      # 4. End-to-end keyboard + axe journey (chat is stubbed; no keys needed).
+      - name: Install Playwright browsers
+        run: npx --workspace web playwright install --with-deps chromium
+      - name: E2E accessibility gate
+        run: npm run test:a11y --workspace web
