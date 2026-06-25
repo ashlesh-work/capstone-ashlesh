@@ -5,23 +5,41 @@ import { Home } from './pages/Home';
 import { Topics } from './pages/Topics';
 import { Topic } from './pages/Topic';
 import { VoiceAssistant } from './voice/VoiceAssistant';
+import { VoiceFirstProvider, useVoiceFirstContext } from './voice/VoiceFirstContext';
+import { VoiceFirstMode } from './voice/VoiceFirstMode';
+
+function AppContent() {
+  const { voiceFirstActive, exitVoiceFirst } = useVoiceFirstContext();
+
+  return (
+    <>
+      <SkipLink />
+      <SiteHeader />
+      <main id="main" tabIndex={-1}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/topics" element={<Topics />} />
+          <Route path="/topics/:id" element={<Topic />} />
+        </Routes>
+      </main>
+      <SiteFooter />
+      <VoiceAssistant />
+
+      {/* Voice-first immersive overlay */}
+      {voiceFirstActive && <VoiceFirstMode onExit={exitVoiceFirst} />}
+    </>
+  );
+}
 
 export function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <SkipLink />
-        <SiteHeader />
-        <main id="main" tabIndex={-1}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/topics" element={<Topics />} />
-            <Route path="/topics/:id" element={<Topic />} />
-          </Routes>
-        </main>
-        <SiteFooter />
-        <VoiceAssistant />
+        <VoiceFirstProvider>
+          <AppContent />
+        </VoiceFirstProvider>
       </BrowserRouter>
     </ThemeProvider>
   );
 }
+

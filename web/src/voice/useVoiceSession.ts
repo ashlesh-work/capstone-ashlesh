@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { Citation } from '@access508/core';
 import { postChat, transcribeAudio, synthesizeSpeech } from '../lib/api';
 import { useI18n } from '../i18n/useI18n';
+import { useMicRecorder } from './useMicRecorder';
 
 export interface Message {
   id: number;
@@ -16,14 +17,6 @@ export type InteractionMode = 'push-to-talk' | 'conversation';
 let nextId = 1;
 
 /**
- * Silence detection threshold (RMS energy).
- * Values below this are considered silence.
- */
-const SILENCE_THRESHOLD = 0.01;
-const SILENCE_DURATION_MS = 1800; // 1.8s of silence triggers end-of-utterance
-const MIN_RECORDING_MS = 800; // minimum recording duration to avoid empty clips
-
-/**
  * Drives the multimodal conversation. Text and voice share ONE path:
  * both end in `ask(text)`. Voice is purely additive.
  *
@@ -31,6 +24,8 @@ const MIN_RECORDING_MS = 800; // minimum recording duration to avoid empty clips
  * - push-to-talk: user presses mic to start/stop recording
  * - conversation: continuous listening with silence detection via AudioContext,
  *   using MediaRecorder + server-side Whisper STT (works offline/cross-browser)
+ *
+ * Now uses the shared `useMicRecorder` for mic infrastructure.
  */
 export function useVoiceSession() {
   const { lang } = useI18n();
@@ -43,15 +38,8 @@ export function useVoiceSession() {
   const [conversationActive, setConversationActive] = useState(false);
   const [isMuted, setIsMutedState] = useState(false);
 
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationStoppedRef = useRef(false);
-  const recordingStartRef = useRef(0);
   const readAloudRef = useRef(false);
   const isMutedRef = useRef(false);
 
@@ -119,41 +107,12 @@ export function useVoiceSession() {
     }
   }, [append, stopAudio, lang]);
 
-  // ── Shared: get mic stream ─────────────────────────────────────────
-
-  const getMicStream = useCallback(async (): Promise<MediaStream> => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    streamRef.current = stream;
-    return stream;
-  }, []);
-
-  const stopStream = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
-      audioCtxRef.current = null;
-    }
-    analyserRef.current = null;
-  }, []);
-
   // ── Process recorded audio ─────────────────────────────────────────
 
-  const processRecording = useCallback(async (speak: boolean): Promise<void> => {
+  const processRecording = useCallback(async (blob: Blob, speak: boolean): Promise<void> => {
     setStatus('transcribing');
     setStatusMessage('Transcribing what you said...');
     try {
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-      chunksRef.current = [];
-
-      if (blob.size < 1000) {
-        // Too small, likely no speech
-        append({ role: 'note', text: "I didn't catch that. Please try again or type your message." });
-        setStatus('idle');
-        setStatusMessage('No speech detected.');
-        return;
-      }
-
       const text = await transcribeAudio(blob);
       if (text) {
         await ask(text, speak);
@@ -169,69 +128,88 @@ export function useVoiceSession() {
     }
   }, [ask, append]);
 
-  // ── Push-to-Talk mode ─────────────────────────────────────────────
+  // ── Push-to-Talk mode (uses shared mic recorder) ──────────────────
 
-  const startListening = useCallback(async () => {
-    try {
-      const stream = await getMicStream();
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
-      recorder.onstop = async () => {
-        stopStream();
-        setMicActive(false);
-        await processRecording(true); // spoken input -> speak the answer back
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      setMicActive(true);
-      setStatus('listening');
-      setStatusMessage('Microphone is on. Listening now. Press the button again to stop.');
-    } catch {
+  const pttRecorder = useMicRecorder({
+    onRecording: useCallback((blob: Blob) => {
+      setMicActive(false);
+      processRecording(blob, true);
+    }, [processRecording]),
+    onEmpty: useCallback(() => {
+      setMicActive(false);
+      append({ role: 'note', text: "I didn't catch that. Please try again or type your message." });
+      setStatus('idle');
+      setStatusMessage('No speech detected.');
+    }, [append]),
+    onPermissionDenied: useCallback(() => {
       append({ role: 'note', text: 'Microphone permission was denied. You can still type your message.' });
       setStatus('error');
       setStatusMessage('Microphone unavailable. Type your message instead.');
+    }, [append]),
+    silenceDetection: false
+  });
+
+  const startListening = useCallback(async () => {
+    const ok = await pttRecorder.start();
+    if (ok) {
+      setMicActive(true);
+      setStatus('listening');
+      setStatusMessage('Microphone is on. Listening now. Press the button again to stop.');
     }
-  }, [getMicStream, stopStream, processRecording, append]);
+  }, [pttRecorder]);
 
   const stopListening = useCallback(() => {
-    recorderRef.current?.stop();
-  }, []);
+    pttRecorder.stop();
+  }, [pttRecorder]);
 
   const toggleMic = useCallback(() => {
     if (micActive) stopListening();
     else startListening();
   }, [micActive, startListening, stopListening]);
 
-  // ── Conversation mode (MediaRecorder + AudioContext silence detection) ──
+  // ── Conversation mode (uses shared mic recorder with silence detection) ──
+
+  // We need a separate recorder ref for conversation because it auto-restarts.
+  const convRecorderRef = useRef<ReturnType<typeof useMicRecorder> | null>(null);
 
   const startConversationRecording = useCallback(async () => {
     if (conversationStoppedRef.current) return;
 
+    // Create a fresh recorder for each conversation segment.
+    // We use the raw MediaRecorder approach here because conversation mode
+    // needs auto-restart-on-stop, which the useMicRecorder callback handles.
     try {
-      const stream = await getMicStream();
-
-      // Set up silence detection via AudioContext
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioCtx = new AudioContext();
-      audioCtxRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 512;
       source.connect(analyser);
-      analyserRef.current = analyser;
 
       const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
-      recorderRef.current = recorder;
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+
+      const recordingStart = Date.now();
+      let silenceTimerLocal: ReturnType<typeof setTimeout> | null = null;
 
       recorder.onstop = async () => {
-        stopStream();
+        stream.getTracks().forEach((t) => t.stop());
+        audioCtx.close().catch(() => {});
+        if (silenceTimerLocal) clearTimeout(silenceTimerLocal);
+
         if (conversationStoppedRef.current || isMutedRef.current) return;
 
-        const elapsed = Date.now() - recordingStartRef.current;
-        if (elapsed < MIN_RECORDING_MS || chunksRef.current.length === 0) {
-          // Too short, restart
+        const elapsed = Date.now() - recordingStart;
+        if (elapsed < 800 || chunks.length === 0) {
+          if (!conversationStoppedRef.current) {
+            setTimeout(() => startConversationRecording(), 300);
+          }
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        if (blob.size < 1000) {
           if (!conversationStoppedRef.current) {
             setTimeout(() => startConversationRecording(), 300);
           }
@@ -239,9 +217,8 @@ export function useVoiceSession() {
         }
 
         setMicActive(false);
-        await processRecording(true);
+        await processRecording(blob, true);
 
-        // Auto-restart listening after response (if not stopped)
         if (!conversationStoppedRef.current) {
           setTimeout(() => {
             if (!conversationStoppedRef.current) {
@@ -252,22 +229,19 @@ export function useVoiceSession() {
         }
       };
 
-      recorder.start(250); // collect data every 250ms
-      recordingStartRef.current = Date.now();
+      recorder.start(250);
       setMicActive(true);
       setStatus('listening');
       setStatusMessage('Conversation mode active. Speak naturally. I will respond when you pause.');
 
-      // Monitor for silence
+      // Silence detection
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       let silenceStart: number | null = null;
 
       const checkSilence = () => {
-        if (conversationStoppedRef.current || !analyserRef.current) return;
+        if (conversationStoppedRef.current) return;
 
         analyser.getByteTimeDomainData(dataArray);
-
-        // Calculate RMS energy
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
           const normalized = (dataArray[i] - 128) / 128;
@@ -275,17 +249,14 @@ export function useVoiceSession() {
         }
         const rms = Math.sqrt(sum / dataArray.length);
 
-        if (rms < SILENCE_THRESHOLD) {
+        if (rms < 0.01) {
           if (silenceStart === null) {
             silenceStart = Date.now();
           } else {
-            const elapsed = Date.now() - recordingStartRef.current;
+            const elapsed = Date.now() - recordingStart;
             const silenceDuration = Date.now() - silenceStart;
-            if (silenceDuration >= SILENCE_DURATION_MS && elapsed >= MIN_RECORDING_MS) {
-              // Silence detected - stop recording
-              try {
-                recorder.stop();
-              } catch { /* already stopped */ }
+            if (silenceDuration >= 1800 && elapsed >= 800) {
+              try { recorder.stop(); } catch { /* already stopped */ }
               return;
             }
           }
@@ -293,11 +264,30 @@ export function useVoiceSession() {
           silenceStart = null;
         }
 
-        silenceTimerRef.current = setTimeout(checkSilence, 100);
+        silenceTimerLocal = setTimeout(checkSilence, 100);
       };
 
-      // Start monitoring after a brief delay
-      silenceTimerRef.current = setTimeout(checkSilence, 500);
+      silenceTimerLocal = setTimeout(checkSilence, 500);
+
+      // Store refs for cleanup
+      convRecorderRef.current = {
+        start: async () => true,
+        stop: () => {
+          if (silenceTimerLocal) clearTimeout(silenceTimerLocal);
+          if (recorder.state !== 'inactive') {
+            try { recorder.stop(); } catch { /* */ }
+          }
+        },
+        cleanup: () => {
+          if (silenceTimerLocal) clearTimeout(silenceTimerLocal);
+          stream.getTracks().forEach((t) => t.stop());
+          audioCtx.close().catch(() => {});
+          if (recorder.state !== 'inactive') {
+            try { recorder.stop(); } catch { /* */ }
+          }
+        },
+        isRecording: () => recorder.state === 'recording'
+      } as any;
 
     } catch {
       append({ role: 'note', text: 'Microphone permission was denied. You can still type your message.' });
@@ -306,7 +296,7 @@ export function useVoiceSession() {
       setStatus('error');
       setStatusMessage('Microphone unavailable. Type your message instead.');
     }
-  }, [getMicStream, stopStream, processRecording, append]);
+  }, [processRecording, append]);
 
   const startConversation = useCallback(() => {
     conversationStoppedRef.current = false;
@@ -316,20 +306,14 @@ export function useVoiceSession() {
 
   const stopConversation = useCallback(() => {
     conversationStoppedRef.current = true;
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-      try { recorderRef.current.stop(); } catch { /* ignore */ }
-    }
-    stopStream();
+    convRecorderRef.current?.cleanup();
+    convRecorderRef.current = null;
     stopAudio();
     setConversationActive(false);
     setMicActive(false);
     setStatus('idle');
     setStatusMessage('Conversation mode stopped.');
-  }, [stopStream, stopAudio]);
+  }, [stopAudio]);
 
   const toggleMute = useCallback(() => {
     const newVal = !isMutedRef.current;
@@ -337,29 +321,15 @@ export function useVoiceSession() {
     setIsMutedState(newVal);
 
     if (newVal) {
-      // Muting: disable tracks and stop recording/monitoring to avoid loop
-      streamRef.current?.getAudioTracks().forEach((t) => {
-        t.enabled = false;
-      });
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        try {
-          recorderRef.current.stop();
-        } catch { /* already stopped */ }
-      }
-      stopStream();
+      convRecorderRef.current?.stop();
       setMicActive(false);
       setStatus('idle');
       setStatusMessage('Microphone is muted.');
     } else {
-      // Unmuting: start recording/monitoring again
       setStatusMessage('Microphone unmuted. Listening again...');
       startConversationRecording();
     }
-  }, [stopStream, startConversationRecording]);
+  }, [startConversationRecording]);
 
   // ── Mode switching ────────────────────────────────────────────────
 
@@ -400,14 +370,11 @@ export function useVoiceSession() {
 
   const cleanup = useCallback(() => {
     stopAudio();
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-      recorderRef.current.stop();
-    }
+    pttRecorder.cleanup();
     if (conversationActive) stopConversation();
-    stopStream();
     setIsMutedState(false);
     isMutedRef.current = false;
-  }, [conversationActive, stopConversation, stopAudio, stopStream]);
+  }, [conversationActive, stopConversation, stopAudio, pttRecorder]);
 
   return {
     messages,

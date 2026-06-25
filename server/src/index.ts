@@ -10,6 +10,7 @@ import { getLLM, getSTT, getTTS } from './adapters/index.js';
 import { registerChatRoute } from './routes/chat.js';
 import { registerSttRoute } from './routes/stt.js';
 import { registerTtsRoute } from './routes/tts.js';
+import { registerIntentRoute } from './routes/intent.js';
 import { registerHealthRoute } from './routes/health.js';
 import { log } from './lib/logger.js';
 
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   registerChatRoute(app, rag, getLLM());
   registerSttRoute(app, getSTT());
   registerTtsRoute(app, getTTS());
+  registerIntentRoute(app, getLLM());
 
   // In production (container), serve the built front end from the same origin.
   const webDist = join(here, '../../web/dist');

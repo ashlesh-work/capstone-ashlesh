@@ -46,3 +46,35 @@ export async function synthesizeSpeech(text: string, lang?: 'en' | 'es'): Promis
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
+
+// ── Voice-first intent classification ────────────────────────────────
+
+export type VoiceIntent =
+  | { type: 'navigate'; topicId: string; topicTitle: string }
+  | { type: 'list_topics' }
+  | { type: 'read_page' }
+  | { type: 'read_summary' }
+  | { type: 'where_am_i' }
+  | { type: 'go_back' }
+  | { type: 'go_home' }
+  | { type: 'question'; text: string }
+  | { type: 'stop' }
+  | { type: 'help' };
+
+/** Classify a spoken utterance into a structured intent. */
+export async function classifyIntent(
+  text: string,
+  availableTopics: { id: string; title: string }[],
+  currentPage?: string
+): Promise<VoiceIntent> {
+  const res = await fetch('/api/intent', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, availableTopics, currentPage })
+  });
+  if (!res.ok) {
+    // Graceful fallback: treat as a question.
+    return { type: 'question', text };
+  }
+  return res.json();
+}

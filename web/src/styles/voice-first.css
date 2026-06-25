@@ -1,0 +1,407 @@
+/* ── Voice-first immersive mode ─────────────────────────────────────── */
+
+.vf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+  color: var(--ink);
+  animation: vf-fade-in 0.3s ease;
+}
+
+@keyframes vf-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+
+.vf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  flex-shrink: 0;
+}
+
+.vf-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.vf-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.vf-exit-btn:hover {
+  background: var(--canvas-alt);
+  border-color: var(--ink-muted);
+}
+
+.vf-exit-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.vf-exit-label {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .vf-exit-label {
+    display: inline;
+  }
+}
+
+/* ── Center area (mic + status) ──────────────────────────────────── */
+
+.vf-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg);
+  min-height: 0;
+}
+
+/* Mic button with animated rings */
+
+.vf-mic-ring {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid var(--hairline);
+  background: var(--canvas-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.vf-mic-ring:hover {
+  border-color: var(--action);
+  transform: scale(1.04);
+}
+
+.vf-mic-ring:active {
+  transform: scale(0.96);
+}
+
+.vf-mic-ring:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+/* Listening state */
+.vf-mic-ring--listening {
+  border-color: var(--action);
+  background: color-mix(in srgb, var(--action) 12%, var(--canvas-alt));
+}
+
+/* Processing state */
+.vf-mic-ring--processing {
+  border-color: var(--ink-muted);
+  background: var(--canvas-alt);
+  animation: vf-pulse-dim 1.2s ease-in-out infinite;
+}
+
+/* Speaking state */
+.vf-mic-ring--speaking {
+  border-color: var(--action);
+  background: color-mix(in srgb, var(--action) 8%, var(--canvas-alt));
+  animation: vf-glow 1.8s ease-in-out infinite;
+}
+
+.vf-mic-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Animated rings (expanding circles behind the mic) */
+
+.vf-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid var(--action);
+  opacity: 0;
+  animation: vf-ring-expand 2.4s ease-out infinite;
+  pointer-events: none;
+}
+
+.vf-ring--2 {
+  animation-delay: 0.8s;
+}
+
+.vf-ring--3 {
+  animation-delay: 1.6s;
+}
+
+@keyframes vf-ring-expand {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes vf-pulse-dim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes vf-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--action) 25%, transparent); }
+  50% { box-shadow: 0 0 24px 8px color-mix(in srgb, var(--action) 15%, transparent); }
+}
+
+/* Status text */
+
+.vf-status {
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+  text-align: center;
+  margin: 0;
+  min-height: 1.5em;
+  transition: color 0.2s ease;
+}
+
+/* Page reader progress bar */
+
+.vf-reader-progress {
+  width: min(400px, 80%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.vf-reader-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.vf-reader-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--action);
+  transition: width 0.3s ease;
+}
+
+.vf-reader-label {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+/* ── Transcript log ──────────────────────────────────────────────── */
+
+.vf-transcript {
+  flex-shrink: 0;
+  max-height: 35vh;
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--glass-border);
+  background: var(--canvas-alt);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.vf-msg {
+  padding: 8px 14px;
+  border-radius: 12px;
+  max-width: 85%;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  animation: vf-msg-in 0.2s ease;
+}
+
+@keyframes vf-msg-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.vf-msg--user {
+  align-self: flex-end;
+  background: var(--action);
+  color: var(--on-accent);
+}
+
+.vf-msg--assistant {
+  align-self: flex-start;
+  background: var(--canvas);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+}
+
+.vf-msg--system {
+  align-self: center;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.vf-msg__role {
+  display: block;
+  font-weight: 700;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 2px;
+  letter-spacing: 0.04em;
+}
+
+/* Typing indicator (reused from voice.css pattern) */
+
+.vf-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+
+.vf-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-muted);
+  animation: vf-typing-bounce 1.4s ease-in-out infinite;
+}
+
+.vf-typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.vf-typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes vf-typing-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .vf-overlay { animation: none; }
+  .vf-ring { animation: none; display: none; }
+  .vf-mic-ring--processing { animation: none; }
+  .vf-mic-ring--speaking { animation: none; }
+  .vf-msg { animation: none; }
+  .vf-typing span { animation: none; opacity: 0.5; }
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .vf-mic-ring {
+    width: 96px;
+    height: 96px;
+  }
+
+  .vf-mic-icon {
+    font-size: 2rem;
+  }
+
+  .vf-status {
+    font-size: 1rem;
+  }
+
+  .vf-transcript {
+    max-height: 30vh;
+  }
+}
+
+/* ── Voice-first CTA on Home page ────────────────────────────────── */
+
+.voice-first-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xl) var(--space-lg);
+  margin-top: var(--space-lg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  backdrop-filter: saturate(180%) blur(16px);
+  text-align: center;
+}
+
+.voice-first-cta__desc {
+  max-width: 50ch;
+  color: var(--ink-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.voice-first-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--action);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.2s ease;
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--action) 30%, transparent);
+}
+
+.voice-first-btn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--action) 40%, transparent);
+}
+
+.voice-first-btn:active {
+  transform: scale(0.97);
+}
+
+.voice-first-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.voice-first-btn__icon {
+  font-size: 1.25rem;
+}
