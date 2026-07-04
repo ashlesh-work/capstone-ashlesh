@@ -2,6 +2,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { getKbDocs } from '../content/kb';
 import { useI18n, type Lang } from '../i18n/useI18n';
+import { useEvalEnabled, setEvalEnabled } from '../lib/evalMode';
 
 
 const LANGS: { value: Lang; label: string; flag: string }[] = [
@@ -61,6 +62,7 @@ export function SiteHeader() {
 /** Footer band. */
 export function SiteFooter() {
   const { t } = useI18n();
+  const evalEnabled = useEvalEnabled();
   return (
     <footer className="site-footer">
       <div className="container">
@@ -69,7 +71,20 @@ export function SiteFooter() {
         </p>
         <p>{t.footerBrand}</p>
         <p>
-          <Link to="/eval">Evaluation console (trainer)</Link>
+          {/* Enable/disable the embedded trainer console (persists per browser). */}
+          <button
+            type="button"
+            aria-pressed={evalEnabled}
+            onClick={() => setEvalEnabled(!evalEnabled)}
+          >
+            Evaluation mode: {evalEnabled ? 'On' : 'Off'}
+          </button>
+          {evalEnabled && (
+            <>
+              {' '}
+              <Link to="/eval">Open evaluation console</Link>
+            </>
+          )}
         </p>
       </div>
     </footer>

@@ -16,6 +16,9 @@ coverage/
 server/data/
 data/
 
+# Capstone submission package (PDFs) — kept local, not in GitHub
+Submission-Docs/
+
 # Editor / OS
 .DS_Store
 .vscode/

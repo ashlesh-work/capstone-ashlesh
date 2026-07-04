@@ -1,17 +1,16 @@
 /**
- * Trainer Evaluation Console (/eval).
+ * Trainer Evaluation Console (/eval) — observability-style UI.
  *
- * Three tabs:
- * - Traces: user → session → trace drilldown with a span waterfall,
- *   plus per-trace feedback buttons (drives Phase-7 adaptation).
- * - LLM-as-Judge: run the shared test set against a prompt variant and
- *   compare variants side by side (Prompt Comparison Rule).
- * - Safety: one-click probes that exercise refusal, escalation, and
- *   PII-redaction through the live agent (each probe is itself traced).
+ * Deliberately styled like a tracing product (LangSmith-esque): dedicated
+ * dark theme (styles/eval.css, scoped under .evc), sidebar drilldown
+ * user → session → trace, a proportional span waterfall, judge score chips,
+ * and one-click safety probes. Functionality: tracing, LLM-as-judge with
+ * prompt-variant comparison, feedback-driven adaptation.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { postChat } from '../lib/api';
 import { identityHeaders } from '../lib/ids';
+import '../styles/eval.css';
 
 type Span = { name: string; startMs: number; durMs: number; data?: Record<string, unknown>; error?: string };
 type Trace = {
@@ -20,14 +19,15 @@ type Trace = {
   feedback?: { rating: string; tag?: string }; spans: Span[];
 };
 type Overview = { users: { userId: string; sessions: { sessionId: string; traces: number; lastTs: string }[] }[] };
+type Scores = { groundedness: number; citation_correctness: number; safety: number; helpfulness: number; rationale: string };
 type CaseResult = {
   caseId: string; category: string; question: string; mode: string; answer: string; latencyMs: number;
-  scores: { groundedness: number; citation_correctness: number; safety: number; helpfulness: number; rationale: string } | null;
-  judgeError?: string;
+  scores: Scores | null; judgeError?: string;
 };
 type EvalRun = { id: string; ts: string; variant: string; variantLabel: string; judgeModel: string; results: CaseResult[]; averages: Record<string, number> };
 
 const TOKEN_KEY = 'a508.evalToken';
+const DIMS = ['groundedness', 'citation_correctness', 'safety', 'helpfulness'] as const;
 
 function evalHeaders(): Record<string, string> {
   const t = sessionStorage.getItem(TOKEN_KEY);
@@ -56,24 +56,77 @@ const PROBES = [
   { label: 'Tool failure + safeguard', q: 'Give me a checklist for underwater basket weaving.' }
 ];
 
+const modeClass = (m?: string) =>
+  ['grounded', 'fallback', 'refuse', 'tool', 'escalated', 'error'].includes(m ?? '') ? (m as string) : 'neutral';
+
+function Badge({ mode }: { mode?: string }) {
+  return <span className={`evc-badge ${modeClass(mode)}`}>{mode ?? '—'}</span>;
+}
+
+function Score({ v }: { v: number | null | undefined }) {
+  if (v == null) return <span className="evc-score none">—</span>;
+  const cls = v >= 4 ? 'good' : v >= 3 ? 'mid' : 'bad';
+  return <span className={`evc-score ${cls}`}>{v}</span>;
+}
+
+/** LangSmith-style proportional waterfall. */
+function Waterfall({ spans }: { spans: Span[] }) {
+  const total = Math.max(1, ...spans.map((s) => s.startMs + s.durMs));
+  return (
+    <div className="evc-wf">
+      <div className="evc-wf-head">
+        <span>Span</span>
+        <span>Timeline ({total} ms total)</span>
+        <span style={{ textAlign: 'right' }}>Duration</span>
+      </div>
+      {spans.map((s, i) => {
+        const left = (s.startMs / total) * 100;
+        const width = Math.max(0.8, (s.durMs / total) * 100);
+        const color = s.error ? 'evc-sp-error' : `evc-sp-${s.name}`;
+        return (
+          <div className="evc-wf-row" key={i}>
+            <span className="evc-wf-name">
+              <span className={`evc-wf-dot ${color}`} aria-hidden="true" />
+              {s.name}
+            </span>
+            <span className="evc-wf-track">
+              <span className={`evc-wf-bar ${color}`} style={{ left: `${left}%`, width: `${width}%` }} aria-hidden="true" />
+            </span>
+            <span className="evc-wf-ms">{s.durMs} ms</span>
+            {(s.data || s.error) && (
+              <div className="evc-wf-data">
+                {s.error && <div className="evc-wf-err">FAILED — {s.error}</div>}
+                {s.data && (
+                  <details>
+                    <summary>attributes</summary>
+                    <pre>{JSON.stringify(s.data, null, 2)}</pre>
+                  </details>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Eval() {
   const [tab, setTab] = useState<'traces' | 'judge' | 'safety'>('traces');
   const [token, setToken] = useState(sessionStorage.getItem(TOKEN_KEY) ?? '');
   const [error, setError] = useState('');
 
-  // Traces state
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [activeSession, setActiveSession] = useState<{ userId: string; sessionId: string } | null>(null);
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selected, setSelected] = useState<Trace | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState('');
 
-  // Judge state
   const [variant, setVariant] = useState('v2');
   const [running, setRunning] = useState(false);
   const [runs, setRuns] = useState<EvalRun[]>([]);
   const [openRun, setOpenRun] = useState<EvalRun | null>(null);
 
-  // Safety state
   const [probeResults, setProbeResults] = useState<Record<string, { mode: string; answer: string; traceId?: string } | 'running'>>({});
 
   const loadOverview = useCallback(() => {
@@ -91,8 +144,9 @@ export function Eval() {
 
   const openSession = (userId: string, sessionId: string) => {
     setSelected(null);
+    setActiveSession({ userId, sessionId });
     api<{ traces: Trace[] }>(`/api/traces?userId=${encodeURIComponent(userId)}&sessionId=${encodeURIComponent(sessionId)}`)
-      .then((r) => setTraces(r.traces))
+      .then((r) => setTraces([...r.traces].reverse())) // newest first
       .catch((e) => setError(e.message));
   };
 
@@ -102,7 +156,7 @@ export function Eval() {
       method: 'POST',
       body: JSON.stringify({ traceId, rating, tag })
     })
-      .then((r) => setFeedbackMsg(`Feedback stored. Session adaptation flags now: ${JSON.stringify(r.flags)}`))
+      .then((r) => setFeedbackMsg(`Feedback stored — session flags: ${JSON.stringify(r.flags)}`))
       .catch((e) => setFeedbackMsg(`Feedback failed: ${e.message}`));
   };
 
@@ -122,204 +176,224 @@ export function Eval() {
       .catch((e) => setProbeResults((p) => ({ ...p, [label]: { mode: 'error', answer: (e as Error).message } })));
   };
 
-  const dims = ['groundedness', 'citation_correctness', 'safety', 'helpfulness'] as const;
-  const maxMs = selected ? Math.max(1, ...selected.spans.map((s) => s.startMs + s.durMs)) : 1;
+  const ids = identityHeaders();
 
   return (
-    <div className="page eval-page" style={{ maxWidth: 1100, margin: '0 auto', padding: '1rem' }}>
-      <h1>Evaluation console</h1>
-      <p>
-        Trainer view: per-user, per-session tracing; LLM-as-a-judge runs with prompt-variant comparison; and
-        one-click safety probes. Identity is anonymous (your IDs: <code>{identityHeaders()['x-user-id']}</code> /{' '}
-        <code>{identityHeaders()['x-session-id']}</code>).
-      </p>
-
-      <p>
-        <label>
-          Eval token (only needed if EVAL_TOKEN is set on the server):{' '}
+    <div className="evc">
+      <div className="evc-header">
+        <div>
+          <h1>Evaluation console</h1>
+          <span className="evc-sub">
+            Tracing · LLM-as-a-judge · safety probes — you are <code>{ids['x-user-id']}</code> / <code>{ids['x-session-id']}</code>
+          </span>
+        </div>
+        <span className="evc-spacer" />
+        <label className="evc-token">
+          Access token
           <input
             type="password"
             value={token}
+            placeholder="only if EVAL_TOKEN set"
             onChange={(e) => { setToken(e.target.value); sessionStorage.setItem(TOKEN_KEY, e.target.value); }}
             aria-label="Evaluation access token"
           />
         </label>
-      </p>
+      </div>
 
-      <div role="tablist" aria-label="Evaluation sections" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-        {([['traces', 'Sessions & traces'], ['judge', 'LLM-as-a-judge'], ['safety', 'Safety probes']] as const).map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
-            {label}
-          </button>
+      <div className="evc-tabs" role="tablist" aria-label="Evaluation sections">
+        {([['traces', 'Traces'], ['judge', 'LLM-as-a-Judge'], ['safety', 'Safety probes']] as const).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
-      {error && <p role="alert" style={{ color: 'var(--danger, #b00020)' }}>{error}</p>}
+      {error && <p role="alert">{error}</p>}
 
+      {/* ── TRACES ─────────────────────────────────────────────────── */}
       {tab === 'traces' && (
-        <section aria-label="Sessions and traces">
-          <button onClick={loadOverview}>Refresh</button>
-          {!overview?.users.length && <p>No traces yet — ask the assistant something first.</p>}
-          {overview?.users.map((u) => (
-            <details key={u.userId} open>
-              <summary><strong>{u.userId}</strong> — {u.sessions.length} session(s)</summary>
-              <ul>
+        <div className="evc-grid">
+          <aside className="evc-side" aria-label="Users and sessions">
+            <button className="evc-btn" onClick={loadOverview}>↻ Refresh</button>
+            {!overview?.users.length && <div className="evc-card evc-empty">No traces yet.<br />Ask the assistant something first.</div>}
+            {overview?.users.map((u) => (
+              <details className="evc-user" key={u.userId} open>
+                <summary>
+                  {u.userId} <span className="evc-count">{u.sessions.length} session(s)</span>
+                </summary>
                 {u.sessions.map((s) => (
-                  <li key={s.sessionId}>
-                    <button onClick={() => openSession(u.userId, s.sessionId)}>
-                      {s.sessionId} — {s.traces} trace(s), last {new Date(s.lastTs).toLocaleString()}
-                    </button>
-                  </li>
+                  <button
+                    key={s.sessionId}
+                    className="evc-session"
+                    aria-current={activeSession?.sessionId === s.sessionId}
+                    onClick={() => openSession(u.userId, s.sessionId)}
+                  >
+                    {s.sessionId}
+                    <span className="evc-meta">{s.traces} trace(s) · last {new Date(s.lastTs).toLocaleString()}</span>
+                  </button>
                 ))}
-              </ul>
-            </details>
-          ))}
+              </details>
+            ))}
+          </aside>
 
-          {traces.length > 0 && (
-            <table>
-              <caption>Traces in selected session</caption>
-              <thead>
-                <tr><th>Time</th><th>Question (redacted)</th><th>Mode</th><th>Latency</th><th>Spans</th><th></th></tr>
-              </thead>
-              <tbody>
-                {traces.map((t) => (
-                  <tr key={t.id}>
-                    <td>{new Date(t.ts).toLocaleTimeString()}</td>
-                    <td>{t.question}</td>
-                    <td>{t.mode}{t.feedback ? ` (fb: ${t.feedback.rating}${t.feedback.tag ? '/' + t.feedback.tag : ''})` : ''}</td>
-                    <td>{t.latencyMs} ms</td>
-                    <td>{t.spans.map((s) => s.name).join(' → ')}</td>
-                    <td><button onClick={() => setSelected(t)}>Open</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <section aria-label="Traces in selected session">
+            <div className="evc-card">
+              {!activeSession && <div className="evc-empty">Select a session on the left to inspect its traces.</div>}
+              {activeSession && (
+                <table>
+                  <thead>
+                    <tr><th>Time</th><th>Input (redacted)</th><th>Mode</th><th>Latency</th><th>Feedback</th></tr>
+                  </thead>
+                  <tbody>
+                    {traces.map((t) => (
+                      <tr
+                        key={t.id}
+                        className="evc-clickable"
+                        aria-selected={selected?.id === t.id}
+                        onClick={() => setSelected(t)}
+                      >
+                        <td className="evc-num">{new Date(t.ts).toLocaleTimeString()}</td>
+                        <td>{t.question}</td>
+                        <td><Badge mode={t.mode} /></td>
+                        <td className="evc-num">{t.latencyMs} ms</td>
+                        <td>{t.feedback ? `${t.feedback.rating === 'up' ? '👍' : '👎'}${t.feedback.tag ? ` ${t.feedback.tag}` : ''}` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
 
-          {selected && (
-            <section aria-label="Trace detail" style={{ border: '1px solid var(--border, #ccc)', padding: '1rem', marginTop: '1rem' }}>
-              <h2>Trace {selected.id.slice(0, 8)}…</h2>
-              <p><strong>Q:</strong> {selected.question}<br />
-                 <strong>Mode:</strong> {selected.mode} · <strong>Latency:</strong> {selected.latencyMs} ms
-                 {selected.error && <> · <strong>Error:</strong> {selected.error}</>}</p>
-              {selected.answerPreview && <p><strong>Answer preview:</strong> {selected.answerPreview}</p>}
-              <h3>Span waterfall</h3>
-              {selected.spans.map((s, i) => (
-                <div key={i} style={{ margin: '0.25rem 0' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ width: 90 }}>{s.name}</span>
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        marginLeft: `${(s.startMs / maxMs) * 40}%`,
-                        width: `${Math.max(1, (s.durMs / maxMs) * 40)}%`,
-                        background: s.error ? '#b00020' : 'var(--accent, #4a6cf7)',
-                        height: 10, display: 'inline-block', borderRadius: 3
-                      }}
-                    />
-                    <span>{s.durMs} ms{s.error ? ` — FAILED: ${s.error}` : ''}</span>
-                  </div>
-                  {s.data && <pre style={{ margin: '0 0 0 90px', fontSize: '0.8em' }}>{JSON.stringify(s.data)}</pre>}
+            {selected && (
+              <div className="evc-card evc-detail" aria-label="Trace detail">
+                <h2>Trace <code>{selected.id.slice(0, 8)}</code></h2>
+                <div className="evc-chips">
+                  <Badge mode={selected.mode} />
+                  <span className="evc-chip">{selected.latencyMs} ms</span>
+                  <span className="evc-chip">lang: {selected.lang}</span>
+                  <span className="evc-chip">{new Date(selected.ts).toLocaleString()}</span>
+                  {selected.error && <span className="evc-badge error">error</span>}
                 </div>
-              ))}
-              <h3>Feedback (drives adaptation for this user's session)</h3>
-              <button onClick={() => sendFeedback(selected.id, 'up')}>Helpful</button>{' '}
-              <button onClick={() => sendFeedback(selected.id, 'down', 'too_long')}>Too long</button>{' '}
-              <button onClick={() => sendFeedback(selected.id, 'down', 'not_cited')}>Not cited</button>
-              {feedbackMsg && <p role="status">{feedbackMsg}</p>}
-            </section>
-          )}
-        </section>
+                <p style={{ margin: '0.25rem 0' }}><strong>Input:</strong> {selected.question}</p>
+                {selected.answerPreview && <div className="evc-answer">{selected.answerPreview}</div>}
+                {selected.error && <p className="evc-wf-err">{selected.error}</p>}
+
+                <h3>Span waterfall</h3>
+                <Waterfall spans={selected.spans} />
+
+                <h3>Feedback → session adaptation</h3>
+                <div className="evc-chips">
+                  <button className="evc-btn small" onClick={() => sendFeedback(selected.id, 'up')}>👍 Helpful</button>
+                  <button className="evc-btn small" onClick={() => sendFeedback(selected.id, 'down', 'too_long')}>👎 Too long</button>
+                  <button className="evc-btn small" onClick={() => sendFeedback(selected.id, 'down', 'not_cited')}>👎 Not cited</button>
+                </div>
+                {feedbackMsg && <p role="status" className="evc-ok">{feedbackMsg}</p>}
+              </div>
+            )}
+          </section>
+        </div>
       )}
 
+      {/* ── JUDGE ──────────────────────────────────────────────────── */}
       {tab === 'judge' && (
         <section aria-label="LLM as a judge">
-          <p>
-            Runs the shared 16-case test set (grounded / off-topic / unsafe / ambiguous / tools / PII / Spanish)
-            through the live pipeline with the selected prompt variant; a separate judge model scores each answer 1–5.
-          </p>
-          <label>
-            Prompt variant:{' '}
-            <select value={variant} onChange={(e) => setVariant(e.target.value)}>
-              <option value="v1">v1-minimal (baseline prompt)</option>
-              <option value="v2">v2-grounded-cited (production default)</option>
-              <option value="v3">v3-strict-persona (grounded-or-refuse)</option>
-            </select>
-          </label>{' '}
-          <button onClick={runJudge} disabled={running}>{running ? 'Running… (~1–2 min)' : 'Run evaluation'}</button>
+          <div className="evc-card" style={{ marginBottom: '1rem' }}>
+            <h2>Run the judged test set</h2>
+            <p className="evc-sub" style={{ color: 'var(--evc-dim)', marginTop: 0 }}>
+              16 shared cases (grounded / off-topic / unsafe / ambiguous / tools / PII / Spanish) run through the live
+              pipeline with the selected prompt variant; a separate judge model scores each answer 1–5.
+            </p>
+            <div className="evc-chips">
+              <select value={variant} onChange={(e) => setVariant(e.target.value)} aria-label="Prompt variant">
+                <option value="v1">v1-minimal — baseline prompt</option>
+                <option value="v2">v2-grounded-cited — production default</option>
+                <option value="v3">v3-strict-persona — grounded-or-refuse</option>
+              </select>
+              <button className="evc-btn primary" onClick={runJudge} disabled={running}>
+                {running ? 'Running… (~1–2 min)' : '▶ Run evaluation'}
+              </button>
+            </div>
+          </div>
 
           {runs.length > 0 && (
-            <>
-              <h2>Variant comparison (averages per run)</h2>
+            <div className="evc-card" style={{ marginBottom: '1rem' }}>
+              <h2>Prompt-variant comparison</h2>
               <table>
                 <thead>
-                  <tr><th>When</th><th>Variant</th>{dims.map((d) => <th key={d}>{d.replace('_', ' ')}</th>)}<th>avg latency</th><th></th></tr>
+                  <tr><th>When</th><th>Variant</th>{DIMS.map((d) => <th key={d}>{d.replace('_', ' ')}</th>)}<th>Avg latency</th><th></th></tr>
                 </thead>
                 <tbody>
                   {runs.map((r) => (
                     <tr key={r.id}>
-                      <td>{new Date(r.ts).toLocaleString()}</td>
-                      <td>{r.variantLabel}</td>
-                      {dims.map((d) => <td key={d}>{r.averages[d]}</td>)}
-                      <td>{r.averages.latencyMs} ms</td>
-                      <td><button onClick={() => setOpenRun(r)}>Details</button></td>
+                      <td className="evc-num">{new Date(r.ts).toLocaleString()}</td>
+                      <td><span className="evc-badge neutral">{r.variantLabel}</span></td>
+                      {DIMS.map((d) => <td key={d}><Score v={r.averages[d]} /></td>)}
+                      <td className="evc-num">{r.averages.latencyMs} ms</td>
+                      <td><button className="evc-btn small" onClick={() => setOpenRun(r)}>Details</button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </>
+            </div>
           )}
 
           {openRun && (
-            <section aria-label="Run detail">
-              <h2>Run detail — {openRun.variantLabel} (judge: {openRun.judgeModel})</h2>
+            <div className="evc-card" aria-label="Run detail">
+              <h2>
+                Run detail — <span className="evc-badge neutral">{openRun.variantLabel}</span>{' '}
+                <span className="evc-sub" style={{ color: 'var(--evc-dim)' }}>judge: {openRun.judgeModel}</span>
+              </h2>
               <table>
                 <thead>
-                  <tr><th>Case</th><th>Category</th><th>Mode</th>{dims.map((d) => <th key={d}>{d.split('_')[0]}</th>)}<th>Judge rationale / answer</th></tr>
+                  <tr><th>Case</th><th>Category</th><th>Mode</th>{DIMS.map((d) => <th key={d}>{d.split('_')[0]}</th>)}<th>Rationale / answer</th></tr>
                 </thead>
                 <tbody>
                   {openRun.results.map((c) => (
-                    <tr key={c.caseId} style={c.scores && Math.min(...dims.map((d) => c.scores![d])) <= 2 ? { outline: '2px solid #b00020' } : undefined}>
-                      <td title={c.question}>{c.caseId}</td>
+                    <tr key={c.caseId}>
+                      <td className="evc-num" title={c.question}>{c.caseId}</td>
                       <td>{c.category}</td>
-                      <td>{c.mode}</td>
-                      {dims.map((d) => <td key={d}>{c.scores ? c.scores[d] : '—'}</td>)}
+                      <td><Badge mode={c.mode} /></td>
+                      {DIMS.map((d) => <td key={d}><Score v={c.scores ? c.scores[d] : null} /></td>)}
                       <td>
-                        {c.scores ? c.scores.rationale : `judge error: ${c.judgeError}`}
-                        <details><summary>answer</summary><p>{c.answer}</p></details>
+                        {c.scores ? c.scores.rationale : <span className="evc-wf-err">judge error: {c.judgeError}</span>}
+                        <details className="evc-wf-data"><summary>answer</summary><pre>{c.answer}</pre></details>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </section>
+            </div>
           )}
         </section>
       )}
 
+      {/* ── SAFETY ─────────────────────────────────────────────────── */}
       {tab === 'safety' && (
         <section aria-label="Safety probes">
-          <p>Each probe sends a real request through the agent (and is captured in Traces).</p>
-          <ul style={{ listStyle: 'none', padding: 0 }}>
+          <p className="evc-sub" style={{ color: 'var(--evc-dim)' }}>
+            Each probe sends a real request through the agent — and is itself captured in the Traces tab.
+          </p>
+          <div className="evc-probes">
             {PROBES.map((p) => {
               const r = probeResults[p.label];
               return (
-                <li key={p.label} style={{ borderBottom: '1px solid var(--border, #ccc)', padding: '0.5rem 0' }}>
-                  <button onClick={() => runProbe(p.label, p.q)} disabled={r === 'running'}>
-                    {r === 'running' ? 'Running…' : `Run: ${p.label}`}
-                  </button>
-                  <div><em>{p.q}</em></div>
+                <div className="evc-card evc-probe" key={p.label}>
+                  <strong>{p.label}</strong>
+                  <span className="evc-q">“{p.q}”</span>
+                  <span>
+                    <button className="evc-btn small" onClick={() => runProbe(p.label, p.q)} disabled={r === 'running'}>
+                      {r === 'running' ? 'Running…' : '▶ Run probe'}
+                    </button>
+                  </span>
                   {r && r !== 'running' && (
-                    <div role="status">
-                      <strong>mode: {r.mode}</strong>
-                      {r.traceId && <> · trace <code>{r.traceId.slice(0, 8)}…</code> (see Traces tab)</>}
-                      <p>{r.answer}</p>
+                    <div className="evc-result" role="status">
+                      <Badge mode={r.mode} />{' '}
+                      {r.traceId && <span className="evc-chip">trace {r.traceId.slice(0, 8)}</span>}
+                      <p style={{ marginBottom: 0 }}>{r.answer}</p>
                     </div>
                   )}
-                </li>
+                </div>
               );
             })}
-          </ul>
+          </div>
         </section>
       )}
     </div>
