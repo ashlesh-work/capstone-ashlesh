@@ -9,6 +9,12 @@ dist/
 build/
 coverage/
 *.log
+# Baseline demo log is committed as Phase-2 evidence.
+!baseline/runs.log
+
+# Runtime data: traces + eval runs (may contain redacted question previews)
+server/data/
+data/
 
 # Editor / OS
 .DS_Store

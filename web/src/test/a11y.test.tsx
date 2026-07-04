@@ -6,16 +6,19 @@ import { ThemeProvider } from '../theme/useTheme';
 import { I18nProvider } from '../i18n/useI18n';
 import { Home } from '../pages/Home';
 import { VoiceAssistant } from '../voice/VoiceAssistant';
+import { VoiceFirstProvider } from '../voice/VoiceFirstContext';
 
 function renderHome() {
   return render(
     <I18nProvider>
       <ThemeProvider>
-        <MemoryRouter>
-          <main>
-            <Home />
-          </main>
-        </MemoryRouter>
+        <VoiceFirstProvider>
+          <MemoryRouter>
+            <main>
+              <Home />
+            </main>
+          </MemoryRouter>
+        </VoiceFirstProvider>
       </ThemeProvider>
     </I18nProvider>
   );
@@ -31,7 +34,9 @@ describe('accessibility', () => {
     render(
       <I18nProvider>
         <ThemeProvider>
-          <VoiceAssistant />
+          <VoiceFirstProvider>
+            <VoiceAssistant />
+          </VoiceFirstProvider>
         </ThemeProvider>
       </I18nProvider>
     );
@@ -55,7 +60,9 @@ describe('accessibility', () => {
     render(
       <I18nProvider>
         <ThemeProvider>
-          <VoiceAssistant />
+          <VoiceFirstProvider>
+            <VoiceAssistant />
+          </VoiceFirstProvider>
         </ThemeProvider>
       </I18nProvider>
     );

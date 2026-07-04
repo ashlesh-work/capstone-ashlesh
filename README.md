@@ -125,6 +125,32 @@ and container modes — only configuration changes.
   U.S. Access Board, W3C). Pages with `signoffRequired: true` make legal-interpretation claims and
   must be reviewed by counsel/agency before production.
 
+## Capstone additions: agent, tracing, evaluation
+
+The app is an AI agent per the capstone spec (Track B, framework-free — see
+`docs/design-justification.md`). Added on top of the base product:
+
+- **Tracing (per user, per session):** every turn produces a trace with spans
+  (`plan → tool → retrieval → llm`), persisted to `server/data/traces.jsonl`.
+  Identity is anonymous (`x-user-id` persists per browser, `x-session-id` per
+  browser session); memory and traces are scoped to one session at a time.
+- **Tools with safeguards:** `kb_search`, `wcag_checklist`, `escalate_to_human`
+  (`server/src/agent/tools.ts`) — loop-guarded, with failed-call fallback.
+- **Memory & adaptation:** session-scoped short-term memory with TTL/reset
+  rules (`server/src/lib/session.ts`); thumbs-down feedback flips behaviour
+  flags (concise / grounded-only) for the rest of the session.
+- **LLM-as-a-judge:** `POST /api/eval/run` executes the 16-case test set
+  against a prompt variant (v1/v2/v3) and scores each answer on groundedness,
+  citations, safety, helpfulness (`server/src/eval/`).
+- **Trainer console:** open **`/eval`** (footer link) — click through
+  user → session → trace waterfalls, run the judge, compare prompt variants,
+  fire one-click safety probes, and give feedback that adapts the agent.
+  Optionally protect with `EVAL_TOKEN` in `.env`.
+- **Phase-2 baseline:** `python3 baseline/phase2_baseline.py --demo` logs the
+  rules-only baseline and its limitations to `baseline/runs.log`.
+- **Capstone docs:** `docs/problem-framing.md`, `docs/demo-script.md`,
+  `docs/evaluation-report.md`, `docs/design-justification.md`.
+
 ## Production hardening (documented next steps)
 - Multi-stage Docker build with `npm prune --omit=dev` for a smaller runtime image.
 - Shared-store rate limiter (e.g. Redis) for multi-instance deployments.

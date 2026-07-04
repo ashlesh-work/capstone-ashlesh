@@ -41,7 +41,23 @@ export const config = {
   },
 
   retriever: opt('RETRIEVER', 'lexical') as 'lexical' | 'embedding',
-  retrievalThreshold: Number(opt('RETRIEVAL_THRESHOLD', '0.12'))
+  retrievalThreshold: Number(opt('RETRIEVAL_THRESHOLD', '0.12')),
+
+  // --- Capstone: tracing, memory, tools, evaluation ---
+  /** Directory for JSONL trace + eval-run persistence (git-ignored). */
+  dataDir: opt('DATA_DIR', 'data'),
+  /** Idle minutes before a session's memory is reset (retention rule). */
+  sessionTtlMin: Number(opt('SESSION_TTL_MIN', '60')),
+  /** Conversation exchanges kept as short-term memory. */
+  memoryTurns: Number(opt('MEMORY_TURNS', '4')),
+  /** Loop-prevention cap on tool routing retries per turn. */
+  toolMaxIterations: Number(opt('TOOL_MAX_ITERATIONS', '2')),
+  /** Model used by the LLM-as-a-judge evaluator. */
+  judgeModel: opt('JUDGE_MODEL', 'gpt-4o-mini'),
+  /** Default prompt variant for the production pipeline (v1|v2|v3). */
+  promptVariant: opt('PROMPT_VARIANT', 'v2'),
+  /** Optional shared secret protecting /api/eval/* and /api/traces*. Empty = open (local demo). */
+  evalToken: opt('EVAL_TOKEN', '')
 } as const;
 
 /** Throw early if a configured provider is missing its key. */

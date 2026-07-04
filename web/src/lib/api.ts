@@ -1,16 +1,19 @@
 import type { Citation } from '@access508/core';
+import { identityHeaders } from './ids';
 
 export interface ChatResponse {
-  mode: 'grounded' | 'fallback' | 'refuse';
+  mode: 'grounded' | 'fallback' | 'refuse' | 'tool' | 'escalated';
   answer: string;
   citations: Citation[];
+  /** Trace id for this turn — used for feedback and the /eval trace viewer. */
+  traceId?: string;
 }
 
-/** Ask the assistant a question. The server runs RAG + grounding + citations. */
+/** Ask the assistant a question. The server runs the agent pipeline (tools + RAG + memory + tracing). */
 export async function postChat(question: string, lang?: 'en' | 'es'): Promise<ChatResponse> {
   const res = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...identityHeaders() },
     body: JSON.stringify({ question, lang })
   });
   if (!res.ok) {

@@ -12,6 +12,7 @@ import { registerSttRoute } from './routes/stt.js';
 import { registerTtsRoute } from './routes/tts.js';
 import { registerIntentRoute } from './routes/intent.js';
 import { registerHealthRoute } from './routes/health.js';
+import { registerEvalRoutes } from './routes/eval.js';
 import { log } from './lib/logger.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   registerSttRoute(app, getSTT());
   registerTtsRoute(app, getTTS());
   registerIntentRoute(app, getLLM());
+  registerEvalRoutes(app, rag, getLLM());
 
   // In production (container), serve the built front end from the same origin.
   const webDist = join(here, '../../web/dist');

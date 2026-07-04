@@ -68,6 +68,9 @@ export function SiteFooter() {
           <strong>{t.appName}</strong> &mdash; {t.footerDesc}
         </p>
         <p>{t.footerBrand}</p>
+        <p>
+          <Link to="/eval">Evaluation console (trainer)</Link>
+        </p>
       </div>
     </footer>
   );
