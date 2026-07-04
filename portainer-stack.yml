@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Access508 — Portainer Stack (docker compose format)
+#
+# Two ways to deploy in Portainer:
+#
+# A) Stacks → Add stack → Repository  (recommended)
+#    Point Portainer at your git repo; Compose path: portainer-stack.yml
+#    Portainer builds the image from the Dockerfile on the target node.
+#
+# B) Stacks → Add stack → Web editor
+#    Paste this file. NOTE: the web editor cannot `build:` from a local
+#    Dockerfile — first build + push the image yourself, then replace the
+#    `build:` block with:   image: <your-registry>/access508:latest
+#      docker build -t <your-registry>/access508:latest .
+#      docker push <your-registry>/access508:latest
+#
+# Secrets: define OPENAI_API_KEY etc. under the stack's
+# "Environment variables" in Portainer — do NOT hard-code them here.
+# The image is multi-arch friendly (node:20 slim) — works on x86 and
+# Raspberry Pi / arm64 nodes.
+# ─────────────────────────────────────────────────────────────────────────
+
+services:
+  access508:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: access508:latest
+    container_name: access508
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8787}:8787"
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+      # Same-origin in container mode (server serves the built web app),
+      # so CORS only matters if you front this with another host/port.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8787}
+
+      # ── Provider keys (set in Portainer → stack → Environment variables)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      ELEVENLABS_VOICE_ID_ES: ${ELEVENLABS_VOICE_ID_ES:-}
+
+      # ── Providers / models
+      STT_PROVIDER: ${STT_PROVIDER:-openai}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      TTS_PROVIDER: ${TTS_PROVIDER:-elevenlabs}
+      OPENAI_LLM_MODEL: ${OPENAI_LLM_MODEL:-gpt-4o-mini}
+      OPENAI_STT_MODEL: ${OPENAI_STT_MODEL:-whisper-1}
+      OPENAI_EMBED_MODEL: ${OPENAI_EMBED_MODEL:-text-embedding-3-small}
+      ELEVENLABS_TTS_MODEL: ${ELEVENLABS_TTS_MODEL:-eleven_turbo_v2_5}
+
+      # ── Retrieval
+      RETRIEVER: ${RETRIEVER:-lexical}
+      RETRIEVAL_THRESHOLD: ${RETRIEVAL_THRESHOLD:-0.12}
+
+      # ── Capstone: tracing, memory, tools, evaluation
+      DATA_DIR: /app/server/data
+      SESSION_TTL_MIN: ${SESSION_TTL_MIN:-60}
+      MEMORY_TURNS: ${MEMORY_TURNS:-4}
+      TOOL_MAX_ITERATIONS: ${TOOL_MAX_ITERATIONS:-2}
+      JUDGE_MODEL: ${JUDGE_MODEL:-gpt-4o-mini}
+      PROMPT_VARIANT: ${PROMPT_VARIANT:-v2}
+      # Strongly recommended when exposed beyond localhost:
+      EVAL_TOKEN: ${EVAL_TOKEN:-}
+    volumes:
+      # Persist traces + LLM-as-judge runs across container restarts/updates.
+      - access508_data:/app/server/data
+    healthcheck:
+      # node's built-in fetch — no curl/wget in the slim image.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Optional guardrails for small hosts (uncomment on a Raspberry Pi):
+    # mem_limit: 512m
+    # cpus: "1.0"
+
+volumes:
+  access508_data:

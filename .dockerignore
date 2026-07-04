@@ -7,3 +7,9 @@ node_modules
 .git
 *.log
 coverage
+# Local-only artifacts — never bake into the image
+Submission-Docs
+Implementation Plan
+server/data
+data
+baseline/runs.log

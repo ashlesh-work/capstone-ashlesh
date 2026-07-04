@@ -103,6 +103,21 @@ docker run -p 8787:8787 --env-file .env access508
 The browser↔server security boundary, adapter interfaces, and KB contract are identical in local
 and container modes — only configuration changes.
 
+### Deploy via Portainer (Stack)
+
+`portainer-stack.yml` is a ready-made compose stack:
+
+1. Portainer → **Stacks → Add stack → Repository**, point at this git repo,
+   set *Compose path* to `portainer-stack.yml` (Portainer builds the image
+   from the Dockerfile on the target node — works on x86 and arm64/Raspberry Pi).
+   If you use the **Web editor** instead, build & push the image first and
+   swap the `build:` block for your `image:` tag (notes are in the file).
+2. Under the stack's **Environment variables**, set `OPENAI_API_KEY`,
+   `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and (recommended) `EVAL_TOKEN`.
+   Everything else has sane defaults; override `HOST_PORT` to change the port.
+3. Deploy → open `http://<host>:8787`. Traces and eval runs persist in the
+   `access508_data` named volume; a healthcheck watches `/api/health`.
+
 ---
 
 ## Accessibility commitments (WCAG 2.2 AA)
